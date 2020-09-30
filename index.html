@@ -1,0 +1,719 @@
+<!--
+
+ ███▄ ▄███▓ ██▓ ███▄    █  ▒█████    ██████  ██▒   ▒█████   ▄▄▄        ██████  ██▓  ██████ 
+▓██▒▀█▀ ██▒▓██▒ ██ ▀█   █ ▒██▒  ██▒▒██    ▒  ██▒  ▒██▒  ██▒▒████▄    ▒██    ▒ ▓██▒▒██    ▒ 
+▓██    ▓██░▒██▒▓██  ▀█ ██▒▒██░  ██▒░ ▓██▄    █▒   ▒██░  ██▒▒██  ▀█▄  ░ ▓██▄   ▒██▒░ ▓██▄   
+▒██    ▒██ ░██░▓██▒  ▐▌██▒▒██   ██░  ▒   ██▒      ▒██   ██░░██▄▄▄▄██   ▒   ██▒░██░  ▒   ██▒
+▒██▒   ░██▒░██░▒██░   ▓██░░ ████▓▒░▒██████▒▒      ░ ████▓▒░ ▓█   ▓██▒▒██████▒▒░██░▒██████▒▒
+░ ▒░   ░  ░░▓  ░ ▒░   ▒ ▒ ░ ▒░▒░▒░ ▒ ▒▓▒ ▒ ░      ░ ▒░▒░▒░  ▒▒   ▓▒█░▒ ▒▓▒ ▒ ░░▓  ▒ ▒▓▒ ▒ ░
+░  ░      ░ ▒ ░░ ░░   ░ ▒░  ░ ▒ ▒░ ░ ░▒  ░ ░        ░ ▒ ▒░   ▒   ▒▒ ░░ ░▒  ░ ░ ▒ ░░ ░▒  ░ ░
+░      ░    ▒ ░   ░   ░ ░ ░ ░ ░ ▒  ░  ░  ░        ░ ░ ░ ▒    ░   ▒   ░  ░  ░   ▒ ░░  ░  ░  
+       ░    ░           ░     ░ ░        ░            ░ ░        ░  ░      ░   ░        ░
+
+Author: Peregrine Fu
+
+Objective:
+Minos' Oasis is a labyrinth game where you must find your way to the exit of a randomly generated maze, using a limited supply of bombs to eliminate any traps in your way.
+
+Design description:
+Several data modules are necessary for this game to function. To generate the maze itself, it needs:
+    - A seed twith which to initialize random() [randomSeed]
+    - The dimensions of the grid [columns, rows]
+    - An empty array to hold the grid's values [grid]
+    - An empty cell to mark where the algorithm currently is [current]
+    - An array to act as a stack to which current is added or removed as necessary [stack]
+
+For the actual gameplay:
+    - The player's current position [playerPos]
+    - The radius around the player by which to reveal the maze [lightRadius]
+    - The amount of bombs the player currently has [bombCount]
+    - The maximum amount of bombs the player can carry [bombLimit]
+    - The position of the exit [exitCell]
+    - A boolean to identify whether the player has reached the exit or manually reset [victory]
+    - An empty array to keep track of which cells have been revealed [revealed]
+
+For generating names:
+    - A list of prefixes and suffixes [firstNames, lastNames]
+
+Each cell also contains:
+    - X and Y values [x, y]
+    - An array of booleans defining which edges have walls [walls]
+    - A boolean to denote if the cell has been visited while generating the maze [visited]
+    - The cell's current state [cellState]
+    - A series of textnodes defining the appearance of the walls and interior of each cell
+
+
+The algorithm:
+
+This script uses a randomized recursive depth-first search algorithm to create pseudorandom mazes. The algorithm runs as follow:
+
+    1. Make the initial cell the current cell and mark it as visited (in this case, the first cell is always (0,0), which is the top left of the grid).
+    2. While there are unvisited cells:
+        1. If the current cell has any neighbours which have not been visited:
+            1. Choose randomly from the unvisited neighbours,
+            2. Push the current cell to the stack,
+            3. Remove the wall between the current cell and the chosen cell, and
+            4. Make the chosen cell the current cell and mark it as visited.
+        2. Otherwise, if the stack is not empty:
+            1. Pop a cell from the stack, and
+            2. Make it the current cell.
+
+This creates an uninterrupted path between any two given points, meaning the game elements (player, exit, traps, etc) will never be cut off from one another.
+
+
+Making mazes:
+
+Once a maze has been generated, it has to be shown to the player. This is done by creating a <div> element for each cell in the grid, giving it an ID of the cell's index in the grid, then populating each element with the textnodes that make up the four walls and its interior. At setup, most squares will be initialized with a default "null" value which gives no information about its walls. Any squares which do not contain the player or the exit also have their interiors set to a null state. Once a cell is "revealed" through the highlight() function, its walls and interior are updated based on its walls[] values and cellState.
+-->
+
+<!doctype HTML>
+<html>
+    <head>
+        <title>Minos' Oasis</title>
+        
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        
+        <script src="http://davidbau.com/encode/seedrandom.min.js"></script>
+        <script>
+            
+            var randomSeed;
+            
+            // All global data used in functions
+            let columns, rows;
+            let grid = [];
+            let current;
+            let stack = [];
+            
+            let playerPos;
+            let lightRadius;
+            let bombCount;
+            let bombLimit;
+            let exitCell;
+            let victory = false;
+            let revealed = [];
+            
+            // --- Name Randomizer ---
+            var firstNames = ["Duergas' ", "Michigan's ", "Chomsky's ", "Minos' ", "Fullbright's ", "Professor Bloodnut's ", "Ptolemy's ", "the Giant's ", "John Malkovich's ", "your cat's ", "Dolorosa's ", "Igor's ", "Nimrod's ", "Acererak's ", "the Dragon's ", "Attenborough's ", "the ", "my ", "your very own ", "some dude's ", "the wizard's ", "the Fictional ", "the Perilous ", "Lord Grimsnarl's ", "the Forgotten ", "Dexter's ", "the big ", "yonder ", "a very cool ", "the Abandoned ", "a vaguely Gothic ", "the Ancient ", "the world's loudest ", "the Undersea ", "the Moonlit ", "the Eldritch ", "Yon Quaver's ", "Shadowmoor's ", "Godrick's ", "David's ", "Daedalus' ", "Plato's ", "Davy Jones' ", "the Sun God's ", "the Queen's ", "the King's ", "the Haunted ", "the Original ", "Oscar Wilde's ", "the Maiden's ", "Saint Cuthbert's ", "the Falconer's ", "the Mystical ", "Old Man's ", "the Rusty ", "the Eternal ", "Caligula's ", "the Last ", "Lysander's ", "Ophelia's ", "Othello's ", "Shakespeare's ", "the Rogue's ", "the Warrior's ", "Cleopatra's ", "Leitner's ", "Thelonious' ", "Marty's ", "Esmé's ", "Charlie's ", "the Minotaur's "];
+            var lastNames = ["Labyrinth", "Maze", "Playground", "Cellar", "Pit", "Wellspring", "Belfry", "Studio", "Maw", "Oasis", "Special Hell", "Very Small Province", "Marsh", "Archipelago", "Causeway", "Matterhorn", "Den", "Living Room", "Repository", "Happiness Factory", "Germ Lab", "Church", "Basement", "Foul-Smelling Attraction", "Flying Circus", "Sadness", "Mancave", "Malkomaze", "BTS Shrine", "Jailhouse", "Kitchenette", "Pizzeria", "Dungeon", "6-step self-help program", "Mineshaft", "World of Hurt", "IKEA", "Black Parade", "Contraption", "Torment", "Garden", "Cloverfields", "World-Wound", "Aquarium", "Crucible", "Palace", "Altar", "Lonely Mountain", "Tomb", "Warship", "Courtyard", "Fjord", "Passage", "Abattoir", "Stadium", "Boudoir", "Arena", "Theatre", "Colosseum", "Pyramids", "Library", "Court", "Hell", "Private Study", "Asylum", "Bacchanal", "Chasm", "Canyon", "Dollhouse", "Day Spa"];
+            
+            function randomizeName() {
+                let first = firstNames[Math.floor(Math.random() * firstNames.length)];
+                let last = lastNames[Math.floor(Math.random() * lastNames.length)];
+                
+                document.getElementById("fullname").innerHTML = first.concat(last);
+            }
+            
+            // -----------------------
+            
+            
+            function appendToMaze (node) {
+                let maze = document.getElementById("maze");
+                maze.appendChild(node);
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            
+            function appendToCell (node, index) {
+                let cell = document.getElementById(index);
+                cell.appendChild(node);
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Initialize all necessary values
+            function setup() {
+                columns = 20;
+                rows = 15;
+                
+                grid = [];
+                current;
+                stack = [];
+                
+                // If carrying over from previous game, keep same bombCount
+                if (!victory) {
+                    bombCount = 3;
+                } else {
+                    bombCount = bombCount;
+                }
+                
+                lightRadius = 2;
+                bombLimit = 5;
+                exitCell;
+                revealed = [];
+                victory = false;
+                
+                // Initialize grid
+                for (let j = 0; j < rows; j++) {
+                    for (let i = 0; i < columns; i++) {
+                        var cell = new Cell(i, j);
+                        grid.push(cell);
+                    }
+                }
+                
+                current = grid[0];
+                
+                // If seed is given, use as seed. Otherwise, randomize seed
+                if (randomSeed) {
+                    Math.seedrandom(randomSeed);
+                } else {
+                    randomSeed = (Math.floor(Math.random() * 100000000000000000)).toString();
+                    Math.seedrandom(randomSeed);
+                }
+                
+                document.getElementById("seedDisplay").append(randomSeed);
+                
+                // Display bombs
+                document.getElementById("bombDisplay").innerHTML = "Bombs:";
+                for (let i = 0; i < bombCount; i++) {
+                    document.getElementById("bombDisplay").innerHTML += " ●";
+                }
+                
+                // Create fresh maze to begin playing
+                randomizeName();
+                populate();
+                draw();
+                highlight(grid[playerPos]);
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Reset necessary values to restart the game
+            function oncemore() {
+                if (!victory) {
+                    playerPos = undefined;
+                }
+                
+                let newSeed = document.getElementById("seedInput").value;
+                
+                if (newSeed) {
+                    randomSeed = newSeed;
+                } else {
+                    randomSeed = undefined;
+                }
+                
+                // Erase maze
+                document.getElementById("maze").innerHTML = "";
+                
+                // Erase seed
+                document.getElementById("seedDisplay").innerHTML = "Seed: ";
+                
+                // Erase seedInput text box
+                document.getElementById("seedInput").value = "";
+                
+                // Clear local storage to minimize storage use and prevent data overflow
+                localStorage.clear();
+                
+                setup();
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Cell object
+            function Cell(x, y) {
+                this.x = x;
+                this.y = y;
+                this.walls = [true, true, true, true];
+                this.visited;
+                this.cellState = 0;
+                
+                // All "graphics" for the maze --------------------
+                let top_wall = document.createTextNode("┌───┐");
+                let left_wall = document.createTextNode("│");
+                let right_wall = document.createTextNode("│");
+                let bottom_wall = document.createTextNode("└───┘");
+
+                let top_open = document.createTextNode("┌   ┐");
+                let left_open = document.createTextNode(" ");
+                let right_open = document.createTextNode(" ");
+                let bottom_open = document.createTextNode("└   ┘");
+
+                let top_null = document.createTextNode("•   •");
+                let left_null = document.createTextNode(" ");
+                let right_null = document.createTextNode(" ");
+                let bottom_null = document.createTextNode("•   •");
+                
+                let id_null = document.createTextNode("   ");
+                let id_player = document.createTextNode(" P ");
+                let id_trap = document.createTextNode(" T ");
+                let id_bomb = document.createTextNode(" B ");
+                let id_exit = document.createTextNode(" / ");
+                // ------------------------------------------------
+                
+                
+                // Select random unvisited neighbour
+                this.checkNeighbours = function() {
+                    let neighbours = [];
+                    
+                    let top = grid[index(x, y - 1)];
+                    let left = grid[index(x - 1, y)];
+                    let right = grid[index(x + 1, y)];
+                    let bottom = grid[index(x, y + 1)];
+                    
+                    if (top && !top.visited) {
+                        neighbours.push(top);
+                    }
+                    if (left && !left.visited) {
+                        neighbours.push(left);
+                    }
+                    if (right && !right.visited) {
+                        neighbours.push(right);
+                    }
+                    if (bottom && !bottom.visited) {
+                        neighbours.push(bottom);
+                    }
+                    
+                    if (neighbours.length > 0) {
+                        let r = Math.floor(Math.random() * neighbours.length);
+                        return neighbours[r];
+                    } else {
+                        return undefined;
+                    }
+                };
+                
+                
+                // Display "null" cells
+                this.show = function(index) {
+                    appendToCell(top_null, index);
+                    appendToCell(document.createElement("br"), index);
+                    
+                    appendToCell(left_null, index);
+
+                    switch (this.cellState) {
+                        case 1:
+                            appendToCell(id_player, index);
+                            break;
+                        case 4:
+                            appendToCell(id_exit, index);
+                            break;
+                        default:
+                            appendToCell(id_null, index);
+                    }
+                    
+                    appendToCell(right_null, index);
+                    appendToCell(document.createElement("br"), index);
+                    
+                    appendToCell(bottom_null, index);
+                };
+
+                
+                // Update cell with walls and interior
+                this.edit = function() {
+                    let cellIndex = index(this.x, this.y);
+                    let cell = document.getElementById(cellIndex).childNodes;
+                    
+                    if (this.walls[0]) {
+                        cell[0].nodeValue = top_wall.nodeValue;
+                    } else {
+                        cell[0].nodeValue = top_open.nodeValue;
+                    }
+                    
+                    if (this.walls[1]) {
+                        cell[2].nodeValue = left_wall.nodeValue;
+                    } else {
+                        cell[2].nodeValue = left_open.nodeValue;
+                    }
+                    
+                    switch (this.cellState) {
+                        case 1:
+                            cell[3].nodeValue = id_player.nodeValue;
+                            break;
+                        case 2:
+                            cell[3].nodeValue = id_trap.nodeValue;
+                            break;
+                        case 3:
+                            cell[3].nodeValue = id_bomb.nodeValue;
+                            break;
+                        case 4:
+                            cell[3].nodeValue = id_exit.nodeValue;
+                            break;
+                        default:
+                            cell[3].nodeValue = id_null.nodeValue;
+                    }
+                    
+                    if (this.walls[2]) {
+                        cell[4].nodeValue = right_wall.nodeValue;
+                    } else {
+                        cell[4].nodeValue = right_open.nodeValue;
+                    }
+                    
+                    if (this.walls[3]) {
+                        cell[6].nodeValue = bottom_wall.nodeValue;
+                    } else {
+                        cell[6].nodeValue = bottom_open.nodeValue;
+                    }
+                };
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Output grid[] index based on x and y values. If outside grid, return -1
+            function index(x, y) {
+                if (x < 0 || y < 0 || x > columns - 1 || y > rows - 1) {
+                    return -1;
+                }
+                return x + y * columns;
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Remove adjoining walls from cells a and b
+            function removeWalls(a, b) {
+                let cx = a.x - b.x;
+                if (cx == 1) {
+                    a.walls[1] = false;
+                    b.walls[2] = false;
+                } else if (cx == -1) {
+                    a.walls[2] = false;
+                    b.walls[1] = false;
+                }
+                
+                let cy = a.y - b.y;
+                if (cy == 1) {
+                    a.walls[0] = false;
+                    b.walls[3] = false;
+                } else if (cy == -1) {
+                    a.walls[3] = false;
+                    b.walls[0] = false;
+                }
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // The algorithm itself. See design description for outline of how it works.
+            function draw() {
+                // Create <div> elements in HTML, moving each row below the last at every Nth element, where N is the number of columns
+                for (let i = 0; i < grid.length; i++) {
+                    let element = document.createElement("cell");
+                    element.setAttribute("id", i);
+                    
+                    appendToMaze(element);
+                    if (i % columns === 0) {
+                        element.setAttribute("style", "clear: left");
+                    }
+                    grid[i].show(i.toString());
+                }
+                
+                while (true) {
+                    current.visited = true;
+
+                    let next = current.checkNeighbours();
+                    
+                    //current.edit(); // --DEBUG-- Shows whole maze at setup
+                    
+                    if (next) {
+                        next.visited = true;
+
+                        stack.push(current);
+
+                        removeWalls(current, next);
+                        
+                        current = next;
+                        
+                        continue;
+
+                    } else if (stack.length > 0) {
+                        current = stack.pop();
+                        
+                        continue;
+                    }
+                    break;
+                }
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Randomly place elements, with exception of exit, which must always spawn at least half the size of the maze away from the player
+            // Spawn 1 player and exit each, between 3 and 6 traps, and 1 or 2 bombs
+            function populate() {
+                let playerSpawn;
+                let exitSpawn;
+                let trapSpawn = [];
+                let bombSpawn = [];
+                
+                if (!playerPos) {
+                    playerSpawn = Math.floor(Math.random() * grid.length);
+                    playerPos = playerSpawn;
+                } else {
+                    playerSpawn = playerPos;
+                }
+                
+                grid[playerSpawn].cellState = 1;
+                
+                while (true) {
+                    exitSpawn = Math.floor(Math.random() * grid.length);
+                    if (Math.abs(grid[playerSpawn].x - grid[exitSpawn].x) > Math.floor(columns / 2) || Math.abs(grid[playerSpawn].y - grid[exitSpawn].y) > Math.floor(rows / 2)) {
+                        break;
+                    }
+                    continue;
+                }
+                grid[exitSpawn].cellState = 4;
+                exitCell = grid[exitSpawn];
+                
+                for (let i = 0; i < Math.floor(Math.random() * 4 + 3); i++) {
+                    while (true) {
+                        trapSpawn[i] = Math.floor(Math.random() * grid.length);
+                        if (!grid[trapSpawn[i]].cellState) {
+                            break;
+                        }
+                        continue;
+                    }
+                    grid[trapSpawn[i]].cellState = 2;
+                }
+                
+                for (let i = 0; i < Math.floor(Math.random() * 2 + 1); i++) {
+                    while (true) {
+                        bombSpawn[i] = Math.floor(Math.random() * grid.length);
+                        if (!grid[bombSpawn[i]].cellState) {
+                            break;
+                        }
+                        continue;
+                    }
+                    grid[trapSpawn[i]].cellState = 3;
+                }
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Reveal the squares surrounding the player based on the lightRadius given
+            function highlight(cellToHighlight) {
+                let illuminate;
+                let x = cellToHighlight.x;
+                let y = cellToHighlight.y;
+                
+                for (let j = y - lightRadius; j <= y + lightRadius; j++) {
+                    for (let i = x - lightRadius; i <= x + lightRadius; i++) {
+                        illuminate = index(i, j);
+                        if (illuminate >= 0) {
+                            grid[illuminate].edit();
+                            revealed.push(grid[illuminate]);
+                        }
+                    }
+                }
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Update all revealed cells based on cellState
+            function globalUpdate() {
+                for (let i = 0; i < grid.length; i++) {
+                    let cell = document.getElementById(i).childNodes;
+                
+                    switch (grid[i].cellState) {
+                        case 1:
+                            cell[3].nodeValue = " P ";
+                            break;
+                        case 2:
+                            if (revealed.includes(grid[i])) {
+                                cell[3].nodeValue = " T ";
+                            }
+                            break;
+                        case 3:
+                            if (revealed.includes(grid[i])) {
+                                cell[3].nodeValue = " B ";
+                            }
+                            break;
+                        case 4:
+                            cell[3].nodeValue = " / ";
+                            break;
+                        default:
+                            cell[3].nodeValue = "   ";
+                    }
+                }
+            }
+            
+            
+            // ------------------------------------------------------
+            
+            
+            // Movement -----------------------
+            // If player can move in [direction], set the current cell's state to 0 and the next to 1
+            // Then highlight around the new cell and update all revealed cells
+            // If bombCount is 0, traps cannot be passed. Otherwise, traps reduce bombCount by 1
+            // Passing over a bomb increases bombCount by 1
+            // If player passes over the exitCell, set victory = true and reset the maze
+            document.onkeydown = function() {
+                grid[playerPos].cellState = 0;
+                
+                switch (window.event.keyCode) {
+                    case 37:
+                        playerMoveLeft();
+                        break;
+                    case 38:
+                        playerMoveUp();
+                        break;
+                    case 39:
+                        playerMoveRight();
+                        break;
+                    case 40:
+                        playerMoveDown();
+                        break;
+                }
+                
+                if (grid[playerPos] === exitCell) {
+                    victory = true;
+                    oncemore();
+                }
+                
+                grid[playerPos].cellState = 1;
+                
+                highlight(grid[playerPos]);
+                
+                globalUpdate();
+                
+                document.getElementById("bombDisplay").innerHTML = "Bombs:";
+                for (let i = 0; i < bombCount; i++) {
+                    document.getElementById("bombDisplay").innerHTML += " ●";
+                }
+            };
+            
+            
+            function playerMoveLeft() {
+                let currentCell = grid[playerPos];
+                
+                currentCell.cellState = 0;
+                
+                if (!currentCell.walls[1]) {
+                    let nextCell = grid[playerPos - 1];
+                    if (nextCell.cellState == 2) {
+                        if (bombCount > 0) {
+                            bombCount --;
+                        } else {
+                            return;
+                        }
+                    } else if (nextCell.cellState == 3 && bombCount < 5) {
+                        bombCount ++;
+                    }
+                    playerPos --;
+                }
+            }
+            
+            
+            function playerMoveUp() {
+                let currentCell = grid[playerPos];
+                
+                currentCell.cellState = 0;
+                currentCell.edit();
+                
+                if (!currentCell.walls[0]) {
+                    let nextCell = grid[playerPos - columns];
+                    if (nextCell.cellState == 2) {
+                        if (bombCount > 0) {
+                            bombCount --;
+                        } else {
+                            return;
+                        }
+                    } else if (nextCell.cellState == 3 && bombCount < 5) {
+                        bombCount ++;
+                    }
+                    playerPos -= columns;
+                }
+            }
+            
+            
+            function playerMoveRight() {
+                let currentCell = grid[playerPos];
+                
+                currentCell.cellState = 0;
+                currentCell.edit();
+                
+                if (!currentCell.walls[2]) {
+                    let nextCell = grid[playerPos + 1];
+                    if (nextCell.cellState == 2) {
+                        if (bombCount > 0) {
+                            bombCount --;
+                        } else {
+                            return;
+                        }
+                    } else if (nextCell.cellState == 3 && bombCount < 5) {
+                        bombCount ++;
+                    }
+                    playerPos ++;
+                }
+            }
+            
+            
+            function playerMoveDown() {
+                let currentCell = grid[playerPos];
+                
+                currentCell.cellState = 0;
+                currentCell.edit();
+                
+                if (!currentCell.walls[3]) {
+                    let nextCell = grid[playerPos + columns];
+                    if (nextCell.cellState == 2) {
+                        if (bombCount > 0) {
+                            bombCount --;
+                        } else {
+                            return;
+                        }
+                    } else if (nextCell.cellState == 3 && bombCount < 5) {
+                        bombCount ++;
+                    }
+                    playerPos += columns;
+                }
+            }
+            
+        </script>
+        
+        <style>
+            body {background-color: #141414; color: #F0F0F0; font-family: monospace; font-size: 82%; text-align: center; padding: 10px}
+            
+            em {font-weight: bold; font-style: normal}
+            
+            h1 {padding: 40px}
+            
+            p {display: inline-block}
+            
+            cell {float: left; margin: -3px; margin-bottom: -10px}
+            
+            footer {position: absolute; bottom: 60px; left: 0; right: 0; margin-left: auto; margin-right: auto; color: #inherit}
+            
+            input {background-color: #202020; color: inherit; border-color: #E0E0E0; font-family: inherit}
+        </style>
+    </head>
+
+    <body onload="setup()">
+        <h1>Welcome to <a id="fullname"></a>. Escape while you still can.</h1>
+        <p id="maze"></p>
+        <br>
+        <p style="margin-left: auto; margin-right: auto; margin-top: 36px; font-size: 16px">
+            You are an intrepid explorer [<em>P</em>].<br>
+            Your goal is to reach the exit [<em>/</em>].<br>
+            Traps [<em>T</em>] will be automatically disabled using one bomb.<br>
+            Replenish bombs [<em>B</em>] by walking over them.<br><br>
+            Use the arrow keys to navigate.<br>
+            Good luck.<br><br><br>
+            <a id="bombDisplay"></a>
+        </p>
+        
+        <footer>
+            <p id="seedDisplay">Seed: </p>
+            <form>
+                <label for="seedInput">Custom seed:</label>
+                <input type="text" id="seedInput" name="seedInput" size="27" maxlength="30" placeholder="Leave empty for random seed">
+                <input type="button" value="Go!" onclick="oncemore()">
+            </form>
+        </footer>
+    </body>
+</html>
